@@ -2,7 +2,7 @@ import os
 import json
 import asyncio
 
-# إعداد حلقة الأحداث (مهم جداً لريندر)
+# إعداد حلقة الأحداث 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
@@ -22,7 +22,8 @@ try:
 except ValueError:
     CHANNEL_ID = channel_env 
 
-FILE_TO_SEND = "prize_file.pdf" 
+# اسم الملف (يرجى إعادة تسمية الملف المرفق بهذا الاسم قبل رفعه لـ GitHub لتجنب أخطاء الترميز)
+FILE_TO_SEND = "baseta_interview.pdf" 
 DB_FILE = "sent_messages.json"
 
 # --- دوال قاعدة البيانات ---
@@ -70,9 +71,8 @@ async def polling_task():
         await send_report(f"❌ حدث خطأ أثناء قراءة القناة.\nالخطأ: `{e}`")
         return
 
-    # الحلقة التكرارية (كل نصف دقيقة)
     while True:
-        await asyncio.sleep(30) # الانتظار 30 ثانية
+        await asyncio.sleep(30) 
         try:
             current_members = set()
             async for member in app_user.get_chat_members(CHANNEL_ID):
@@ -89,21 +89,26 @@ async def polling_task():
                 success_count = 0
                 for uid in new_members:
                     try:
-                        # إرسال الرسالة الترحيبية أولاً
+                        # الرسالة الأولى: الترحيب
                         msg1 = await app_user.send_message(
                             chat_id=uid,
                             text="يا هلا بك في عائلة \"بسيطة\" 💚👋\nأول شيء، خذ هديتك اللي وعدناك فيها.. ملف \"أسرار المقابلات الشخصية\" جاهز للتحميل الحين 👇"
                         )
-                        # إرسال الملف ثانياً
+                        # الرسالة الثانية: الملف (بدون تنبيه)
                         msg2 = await app_user.send_document(
                             chat_id=uid,
-                            document=FILE_TO_SEND,
-                            caption="⚠️ تنبيه: في حال مغادرتك سيتم سحب الملف تلقائياً!"
+                            document=FILE_TO_SEND
                         )
-                        # حفظ آيدي الرسالتين ليتم حذفهما معاً لو غادر
-                        db[str(uid)] = [msg1.id, msg2.id]
+                        # الرسالة الثالثة: من إحنا؟
+                        msg3 = await app_user.send_message(
+                            chat_id=uid,
+                            text="من إحنا؟\nإحنا منصة سعودية متخصصة في تمكين الباحثين عن عمل، ومعانا خبراء موارد بشرية (HR) يصيغون سيرتك بالملّي لتتخطى فلاتر الـ ATS. يعني من اليوم أنت مو لوحدك، إحنا مستشارك وسندك خطوة بخطوة لين تبشرنا بقبولك 🤝🚀.\n\n💡 تنبيه غالي: ثبّت القناة وفعّل التنبيهات 🔔 عشان ما تفوتك الفرص والوظائف اليومية.\n\nفالك التوفيق والوظيفة اللي تطمح لها يا رب! 🟢🫡"
+                        )
+                        
+                        # حفظ أرقام الرسائل الثلاث ليتم سحبها معاً إذا غادر
+                        db[str(uid)] = [msg1.id, msg2.id, msg3.id]
                         success_count += 1
-                        await asyncio.sleep(2) # أمان لتجنب الحظر
+                        await asyncio.sleep(2) 
                     except Exception as e:
                         print(f"فشل الإرسال لـ {uid}: {e}")
                     
@@ -119,10 +124,9 @@ async def polling_task():
                 for uid in left_members:
                     if str(uid) in db:
                         try:
-                            # استدعاء أرقام الرسائل المحفوظة لحذفها
                             messages_to_delete = db[str(uid)]
                             if not isinstance(messages_to_delete, list):
-                                messages_to_delete = [messages_to_delete] # توافق مع السجل القديم
+                                messages_to_delete = [messages_to_delete]
                                 
                             await app_user.delete_messages(chat_id=uid, message_ids=messages_to_delete, revoke=True)
                             del db[str(uid)]
@@ -133,9 +137,9 @@ async def polling_task():
                 
                 save_db(db)
                 if removed_count > 0:
-                    await send_report(f"🗑️ تم رصد مغادرة أعضاء، وتم سحب الملف من {removed_count} أشخاص بنجاح.")
+                    await send_report(f"🗑️ تم رصد مغادرة أعضاء، وتم سحب جميع الرسائل من {removed_count} أشخاص بنجاح.")
             
-            # 3. إرسال تقرير في حال عدم وجود أي تغيير
+            # 3. إرسال تقرير في حال عدم وجود تغيير
             if not new_members and not left_members:
                 await send_report("🔄 تم الفحص (30 ثانية): لا يوجد أعضاء جدد أو مغادرين.")
                     
