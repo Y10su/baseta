@@ -1,6 +1,13 @@
+# --- استدعاء المكتبات الأساسية أولاً ---
 import os
 import json
 import asyncio
+
+# ===> هنا يكمن الحل: إنشاء Event Loop قبل استدعاء Pyrogram <===
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+# =========================================================
+
 import requests
 from aiohttp import web
 from pyrogram import Client, idle, filters
@@ -15,7 +22,8 @@ CHANNEL_ID = int(os.environ.get("CHANNEL_ID", 0))
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 MY_CHAT_ID = os.environ.get("MY_CHAT_ID", "")
 
-FILE_TO_SEND = "prize_file.pdf" # تأكد من رفع هذا الملف إلى GitHub مع الكود
+# اسم ملف الجائزة 
+FILE_TO_SEND = "prize_file.pdf" 
 DB_FILE = "sent_messages.json"
 
 # --- دوال قاعدة البيانات والإشعارات ---
@@ -33,12 +41,14 @@ def save_db(data):
 
 def send_report(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    try: requests.post(url, json={"chat_id": MY_CHAT_ID, "text": message, "parse_mode": "Markdown"})
-    except: pass
+    try: 
+        requests.post(url, json={"chat_id": MY_CHAT_ID, "text": message, "parse_mode": "Markdown"})
+    except: 
+        pass
 
-# --- خادم الويب الوهمي (إجباري لـ Render) ---
+# --- خادم الويب الوهمي ---
 async def handle_ping(request):
-    return web.Response(text="اليوزر بوت يعمل بنجاح!")
+    return web.Response(text="اليوزر بوت يعمل بنجاح على ريندر!")
 
 async def run_web_server():
     app_web = web.Application()
@@ -66,7 +76,7 @@ async def handle_channel_changes(client: Client, chat_member_updated: ChatMember
     # الانضمام
     if new_member and new_member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.SUBSCRIBER]:
         if not old_member or old_member.status in [ChatMemberStatus.LEFT, ChatMemberStatus.BANNED]:
-            await asyncio.sleep(4)
+            await asyncio.sleep(4) 
             try:
                 msg = await client.send_document(
                     chat_id=user_id,
@@ -92,14 +102,14 @@ async def handle_channel_changes(client: Client, chat_member_updated: ChatMember
                 except Exception as e:
                     pass
 
-# --- التشغيل الأساسي ---
+# --- دالة التشغيل الأساسية ---
 async def start_all():
     await run_web_server()
     await app.start()
-    send_report("🚀 *تم تشغيل اليوزر بوت على Render بنجاح!*")
+    send_report("🚀 *تم تشغيل اليوزر بوت على Render بنجاح وهو يعمل الآن!*")
     await idle()
     await app.stop()
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
+    # تم تغيير طريقة التشغيل هنا لتتوافق مع الإعدادات الجديدة
     loop.run_until_complete(start_all())
