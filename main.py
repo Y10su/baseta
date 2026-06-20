@@ -2,18 +2,27 @@ import os
 import json
 import asyncio
 
+# إعداد حلقة الأحداث (مهم جداً لريندر)
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
 from aiohttp import web
 from pyrogram import Client, idle
 
+# --- قراءة الإعدادات من متغيرات بيئة ريندر ---
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH", "")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
-CHANNEL_ID = int(os.environ.get("CHANNEL_ID", 0))
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 MY_CHAT_ID = int(os.environ.get("MY_CHAT_ID", 0))
+
+# === التعديل الجديد لحل مشكلة الآيدي ===
+channel_env = os.environ.get("CHANNEL_ID", "0")
+try:
+    CHANNEL_ID = int(channel_env)
+except ValueError:
+    CHANNEL_ID = channel_env  # لكي يقبل النص (اليوزر) بدلاً من الرقم
+# =======================================
 
 FILE_TO_SEND = "prize_file.pdf" 
 DB_FILE = "sent_messages.json"
@@ -29,7 +38,7 @@ def load_db():
 def save_db(data):
     with open(DB_FILE, "w") as f: json.dump(data, f)
 
-# --- خادم الويب ---
+# --- خادم الويب (لإبقاء ريندر متيقظاً) ---
 async def handle_ping(request):
     return web.Response(text="نظام الفحص المستمر يعمل بنجاح!")
 
@@ -52,16 +61,16 @@ async def send_report(message):
 
 # --- نظام الفحص المستمر (كل دقيقة) ---
 async def polling_task():
-    await send_report("⏳ جاري تهيئة النظام ومسح الأعضاء الحاليين (لكي لا يتم إرسال الجائزة للقدامى)...")
+    await send_report(f"⏳ جاري تهيئة النظام ومسح الأعضاء الحاليين في ({CHANNEL_ID})...")
     
     known_members = set()
     try:
-        # استخراج جميع الأعضاء الحاليين
+        # استخراج جميع الأعضاء الحاليين وتجاهلهم (كي لا نرسل للقدامى)
         async for member in app_user.get_chat_members(CHANNEL_ID):
             known_members.add(member.user.id)
         await send_report(f"✅ تم حفظ {len(known_members)} عضو سابق بنجاح.\n\n🔄 سيبدأ البوت الآن بفحص القناة كل 60 ثانية بحثاً عن الجدد...")
     except Exception as e:
-        await send_report(f"❌ حدث خطأ أثناء قراءة القناة، تأكد أن معرف القناة صحيح واليوزر بوت مشرف.\nالخطأ: `{e}`")
+        await send_report(f"❌ حدث خطأ أثناء قراءة القناة، تأكد أن معرف/يوزر القناة صحيح واليوزر بوت مشرف.\nالخطأ: `{e}`")
         return
 
     # الحلقة التكرارية (كل دقيقة)
@@ -91,11 +100,11 @@ async def polling_task():
                         )
                         db[str(uid)] = msg.id
                         success_count += 1
-                        await asyncio.sleep(2) # تأخير ثانيتين بين كل شخص لحماية الحساب من الحظر
+                        await asyncio.sleep(2) # أمان لتجنب حظر الحساب
                     except Exception as e:
                         print(f"فشل الإرسال لـ {uid}: {e}")
                     
-                    known_members.add(uid) # إضافته للقائمة المعرفة
+                    known_members.add(uid)
                 
                 save_db(db)
                 if success_count > 0:
