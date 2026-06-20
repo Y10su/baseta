@@ -9,20 +9,18 @@ asyncio.set_event_loop(loop)
 from aiohttp import web
 from pyrogram import Client, idle
 
-# --- قراءة الإعدادات من متغيرات بيئة ريندر ---
+# --- الإعدادات ---
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH", "")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 MY_CHAT_ID = int(os.environ.get("MY_CHAT_ID", 0))
 
-# === التعديل الجديد لحل مشكلة الآيدي ===
 channel_env = os.environ.get("CHANNEL_ID", "0")
 try:
     CHANNEL_ID = int(channel_env)
 except ValueError:
-    CHANNEL_ID = channel_env  # لكي يقبل النص (اليوزر) بدلاً من الرقم
-# =======================================
+    CHANNEL_ID = channel_env 
 
 FILE_TO_SEND = "prize_file.pdf" 
 DB_FILE = "sent_messages.json"
@@ -59,48 +57,53 @@ async def send_report(message):
     try: await app_bot.send_message(chat_id=MY_CHAT_ID, text=message)
     except: pass
 
-# --- نظام الفحص المستمر (كل دقيقة) ---
+# --- نظام الفحص المستمر (كل 30 ثانية) ---
 async def polling_task():
     await send_report(f"⏳ جاري تهيئة النظام ومسح الأعضاء الحاليين في ({CHANNEL_ID})...")
     
     known_members = set()
     try:
-        # استخراج جميع الأعضاء الحاليين وتجاهلهم (كي لا نرسل للقدامى)
         async for member in app_user.get_chat_members(CHANNEL_ID):
             known_members.add(member.user.id)
-        await send_report(f"✅ تم حفظ {len(known_members)} عضو سابق بنجاح.\n\n🔄 سيبدأ البوت الآن بفحص القناة كل 60 ثانية بحثاً عن الجدد...")
+        await send_report(f"✅ تم حفظ {len(known_members)} عضو سابق بنجاح.\n\n🔄 سيبدأ البوت الآن بفحص القناة كل 30 ثانية...")
     except Exception as e:
-        await send_report(f"❌ حدث خطأ أثناء قراءة القناة، تأكد أن معرف/يوزر القناة صحيح واليوزر بوت مشرف.\nالخطأ: `{e}`")
+        await send_report(f"❌ حدث خطأ أثناء قراءة القناة.\nالخطأ: `{e}`")
         return
 
-    # الحلقة التكرارية (كل دقيقة)
+    # الحلقة التكرارية (كل نصف دقيقة)
     while True:
-        await asyncio.sleep(60) # الانتظار 60 ثانية
+        await asyncio.sleep(30) # الانتظار 30 ثانية
         try:
             current_members = set()
             async for member in app_user.get_chat_members(CHANNEL_ID):
                 current_members.add(member.user.id)
             
-            # استخراج الجدد والمغادرين
             new_members = current_members - known_members
             left_members = known_members - current_members
             
             db = load_db()
             
-            # التعامل مع المنضمين الجدد
+            # 1. التعامل مع المنضمين الجدد
             if new_members:
-                await send_report(f"🔍 تم رصد {len(new_members)} أعضاء جدد خلال الدقيقة الماضية! جاري الإرسال...")
+                await send_report(f"🔍 تم رصد {len(new_members)} أعضاء جدد! جاري الإرسال...")
                 success_count = 0
                 for uid in new_members:
                     try:
-                        msg = await app_user.send_document(
+                        # إرسال الرسالة الترحيبية أولاً
+                        msg1 = await app_user.send_message(
+                            chat_id=uid,
+                            text="يا هلا بك في عائلة \"بسيطة\" 💚👋\nأول شيء، خذ هديتك اللي وعدناك فيها.. ملف \"أسرار المقابلات الشخصية\" جاهز للتحميل الحين 👇"
+                        )
+                        # إرسال الملف ثانياً
+                        msg2 = await app_user.send_document(
                             chat_id=uid,
                             document=FILE_TO_SEND,
-                            caption="🎁 أهلاً بك في القناة! إليك ملف الجائزة الخاص بك.\n⚠️ تنبيه: في حال مغادرتك سيتم سحب الملف تلقائياً!"
+                            caption="⚠️ تنبيه: في حال مغادرتك سيتم سحب الملف تلقائياً!"
                         )
-                        db[str(uid)] = msg.id
+                        # حفظ آيدي الرسالتين ليتم حذفهما معاً لو غادر
+                        db[str(uid)] = [msg1.id, msg2.id]
                         success_count += 1
-                        await asyncio.sleep(2) # أمان لتجنب حظر الحساب
+                        await asyncio.sleep(2) # أمان لتجنب الحظر
                     except Exception as e:
                         print(f"فشل الإرسال لـ {uid}: {e}")
                     
@@ -110,13 +113,18 @@ async def polling_task():
                 if success_count > 0:
                     await send_report(f"✅ اكتمل الإرسال! تم تسليم الجائزة لـ {success_count} أعضاء بنجاح.")
 
-            # التعامل مع المغادرين
+            # 2. التعامل مع المغادرين
             if left_members:
                 removed_count = 0
                 for uid in left_members:
                     if str(uid) in db:
                         try:
-                            await app_user.delete_messages(chat_id=uid, message_ids=db[str(uid)], revoke=True)
+                            # استدعاء أرقام الرسائل المحفوظة لحذفها
+                            messages_to_delete = db[str(uid)]
+                            if not isinstance(messages_to_delete, list):
+                                messages_to_delete = [messages_to_delete] # توافق مع السجل القديم
+                                
+                            await app_user.delete_messages(chat_id=uid, message_ids=messages_to_delete, revoke=True)
                             del db[str(uid)]
                             removed_count += 1
                             await asyncio.sleep(1)
@@ -126,6 +134,10 @@ async def polling_task():
                 save_db(db)
                 if removed_count > 0:
                     await send_report(f"🗑️ تم رصد مغادرة أعضاء، وتم سحب الملف من {removed_count} أشخاص بنجاح.")
+            
+            # 3. إرسال تقرير في حال عدم وجود أي تغيير
+            if not new_members and not left_members:
+                await send_report("🔄 تم الفحص (30 ثانية): لا يوجد أعضاء جدد أو مغادرين.")
                     
         except Exception as e:
             print(f"Polling loop error: {e}")
@@ -135,10 +147,7 @@ async def start_all():
     await run_web_server()
     await app_user.start()
     await app_bot.start()
-    
-    # تشغيل مهمة الفحص المستمر في الخلفية
     asyncio.create_task(polling_task())
-    
     await idle()
     await app_user.stop()
     await app_bot.stop()
