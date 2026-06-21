@@ -60,21 +60,21 @@ async def send_report(message):
     try: await app_bot.send_message(chat_id=MY_CHAT_ID, text=message)
     except: pass
 
-# --- نظام الفحص المستمر الآمن (كل دقيقة) ---
+# --- نظام الفحص المستمر الآمن (كل 30 ثانية) ---
 async def polling_task():
-    await send_report(f"⏳ جاري تهيئة النظام الآمن ومسح الأعضاء الحاليين في ({CHANNEL_ID})...")
+    await send_report(f"⏳ جاري تهيئة النظام ومسح الأعضاء الحاليين في ({CHANNEL_ID})...")
     
     known_members = set()
     try:
         async for member in app_user.get_chat_members(CHANNEL_ID):
             known_members.add(member.user.id)
-        await send_report(f"✅ تم حفظ {len(known_members)} عضو سابق بنجاح.\n\n🔄 سيبدأ البوت الآن بفحص القناة كل 60 ثانية (بوضع الأمان العالي)...")
+        await send_report(f"✅ تم حفظ {len(known_members)} عضو سابق بنجاح.\n\n🔄 سيبدأ البوت الآن بفحص القناة كل 30 ثانية...")
     except Exception as e:
         await send_report(f"❌ حدث خطأ أثناء قراءة القناة.\nالخطأ: `{e}`")
         return
 
     while True:
-        await asyncio.sleep(60) # الفحص كل دقيقة لتخفيف الضغط
+        await asyncio.sleep(30) # الفحص كل نصف دقيقة
         try:
             current_members = set()
             async for member in app_user.get_chat_members(CHANNEL_ID):
@@ -94,7 +94,7 @@ async def polling_task():
                     try:
                         # --- الرسالة الأولى (ترحيب) ---
                         await app_user.send_chat_action(chat_id=uid, action=ChatAction.TYPING)
-                        await asyncio.sleep(random.uniform(2.5, 4.0)) # انتظار عشوائي كأنه يكتب
+                        await asyncio.sleep(random.uniform(2.5, 4.0)) 
                         
                         msg1 = await app_user.send_message(
                             chat_id=uid,
@@ -104,7 +104,7 @@ async def polling_task():
                         
                         # --- الرسالة الثانية (الملف) ---
                         await app_user.send_chat_action(chat_id=uid, action=ChatAction.UPLOAD_DOCUMENT)
-                        await asyncio.sleep(random.uniform(3.5, 5.0)) # انتظار عشوائي كأنه يرفع الملف
+                        await asyncio.sleep(random.uniform(3.5, 5.0)) 
                         
                         msg2 = await app_user.send_document(
                             chat_id=uid,
@@ -124,12 +124,10 @@ async def polling_task():
                         db[str(uid)] = [msg1.id, msg2.id, msg3.id]
                         success_count += 1
                         
-                        # --- فاصل زمني كبير بين كل شخص والآخر ---
                         delay_between_users = random.uniform(15.0, 30.0)
                         await asyncio.sleep(delay_between_users)
                         
                     except FloodWait as e:
-                        # استراحة إجبارية طويلة إذا طلب تيليجرام
                         wait_time = e.value + 10
                         await send_report(f"🚨 تحذير أمني: تيليجرام يطلب التهدئة. سأتوقف عن الإرسال لمدة {wait_time} ثانية لحماية الحساب...")
                         await asyncio.sleep(wait_time)
@@ -146,7 +144,7 @@ async def polling_task():
                 if success_count > 0:
                     await send_report(f"✅ اكتمل الإرسال! تم تسليم الجائزة لـ {success_count} أعضاء بأمان.")
 
-            # 2. التعامل مع المغادرين (يتم بسرعة لأن الحذف لا يحظر الحساب)
+            # 2. التعامل مع المغادرين 
             if left_members:
                 removed_count = 0
                 for uid in left_members:
@@ -167,9 +165,9 @@ async def polling_task():
                 if removed_count > 0:
                     await send_report(f"🗑️ تم رصد مغادرة أعضاء، وتم سحب جميع الرسائل من {removed_count} أشخاص.")
             
-            # تقرير دوري هادئ 
+            # 3. إرسال تقرير الفحص الدوري (حتى لو مافي أحد جديد)
             if not new_members and not left_members:
-                pass # تم إخفاء رسالة (لا يوجد أعضاء جدد) لكي لا تزعجك كل دقيقة
+                await send_report("🔄 تم الفحص (30 ثانية): لا يوجد أعضاء جدد أو مغادرين.")
                     
         except Exception as e:
             print(f"Polling loop error: {e}")
