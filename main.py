@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import random
 
 # إعداد حلقة الأحداث 
 loop = asyncio.new_event_loop()
@@ -8,7 +9,7 @@ asyncio.set_event_loop(loop)
 
 from aiohttp import web
 from pyrogram import Client, idle
-# استدعاء مكتبات الأخطاء لمعالجتها
+from pyrogram.enums import ChatAction
 from pyrogram.errors import FloodWait, UserPrivacyRestricted, PeerIdInvalid
 
 # --- الإعدادات ---
@@ -40,7 +41,7 @@ def save_db(data):
 
 # --- خادم الويب ---
 async def handle_ping(request):
-    return web.Response(text="نظام الفحص المستمر يعمل بنجاح!")
+    return web.Response(text="النظام الآمن يعمل بنجاح!")
 
 async def run_web_server():
     app_web = web.Application()
@@ -59,21 +60,21 @@ async def send_report(message):
     try: await app_bot.send_message(chat_id=MY_CHAT_ID, text=message)
     except: pass
 
-# --- نظام الفحص المستمر (كل 30 ثانية) ---
+# --- نظام الفحص المستمر الآمن (كل دقيقة) ---
 async def polling_task():
-    await send_report(f"⏳ جاري تهيئة النظام ومسح الأعضاء الحاليين في ({CHANNEL_ID})...")
+    await send_report(f"⏳ جاري تهيئة النظام الآمن ومسح الأعضاء الحاليين في ({CHANNEL_ID})...")
     
     known_members = set()
     try:
         async for member in app_user.get_chat_members(CHANNEL_ID):
             known_members.add(member.user.id)
-        await send_report(f"✅ تم حفظ {len(known_members)} عضو سابق بنجاح.\n\n🔄 سيبدأ البوت الآن بفحص القناة كل 30 ثانية...")
+        await send_report(f"✅ تم حفظ {len(known_members)} عضو سابق بنجاح.\n\n🔄 سيبدأ البوت الآن بفحص القناة كل 60 ثانية (بوضع الأمان العالي)...")
     except Exception as e:
         await send_report(f"❌ حدث خطأ أثناء قراءة القناة.\nالخطأ: `{e}`")
         return
 
     while True:
-        await asyncio.sleep(30) 
+        await asyncio.sleep(60) # الفحص كل دقيقة لتخفيف الضغط
         try:
             current_members = set()
             async for member in app_user.get_chat_members(CHANNEL_ID):
@@ -84,28 +85,37 @@ async def polling_task():
             
             db = load_db()
             
-            # 1. التعامل مع المنضمين الجدد
+            # 1. التعامل مع المنضمين الجدد ببطء ومحاكاة بشرية
             if new_members:
-                await send_report(f"🔍 تم رصد {len(new_members)} أعضاء جدد! جاري الإرسال...")
+                await send_report(f"🔍 تم رصد {len(new_members)} أعضاء جدد! جاري الإرسال بوضع المحاكاة البشرية...")
                 success_count = 0
                 
                 for uid in new_members:
                     try:
-                        # الرسالة الأولى: الترحيب
+                        # --- الرسالة الأولى (ترحيب) ---
+                        await app_user.send_chat_action(chat_id=uid, action=ChatAction.TYPING)
+                        await asyncio.sleep(random.uniform(2.5, 4.0)) # انتظار عشوائي كأنه يكتب
+                        
                         msg1 = await app_user.send_message(
                             chat_id=uid,
                             text="يا هلا بك في عائلة \"بسيطة\" 💚👋\nأول شيء، خذ هديتك اللي وعدناك فيها.. ملف \"أسرار المقابلات الشخصية\" جاهز للتحميل الحين 👇"
                         )
-                        await asyncio.sleep(1) # فاصل ثانية لمنع الحظر
+                        await asyncio.sleep(random.uniform(1.5, 3.0)) 
                         
-                        # الرسالة الثانية: الملف
+                        # --- الرسالة الثانية (الملف) ---
+                        await app_user.send_chat_action(chat_id=uid, action=ChatAction.UPLOAD_DOCUMENT)
+                        await asyncio.sleep(random.uniform(3.5, 5.0)) # انتظار عشوائي كأنه يرفع الملف
+                        
                         msg2 = await app_user.send_document(
                             chat_id=uid,
                             document=FILE_TO_SEND
                         )
-                        await asyncio.sleep(1) # فاصل ثانية
+                        await asyncio.sleep(random.uniform(2.0, 3.5))
                         
-                        # الرسالة الثالثة: من إحنا؟
+                        # --- الرسالة الثالثة (من إحنا) ---
+                        await app_user.send_chat_action(chat_id=uid, action=ChatAction.TYPING)
+                        await asyncio.sleep(random.uniform(3.0, 5.5))
+                        
                         msg3 = await app_user.send_message(
                             chat_id=uid,
                             text="من إحنا؟\nإحنا منصة سعودية متخصصة في تمكين الباحثين عن عمل، ومعانا خبراء موارد بشرية (HR) يصيغون سيرتك بالملّي لتتخطى فلاتر الـ ATS. يعني من اليوم أنت مو لوحدك، إحنا مستشارك وسندك خطوة بخطوة لين تبشرنا بقبولك 🤝🚀.\n\n💡 تنبيه غالي: ثبّت القناة وفعّل التنبيهات 🔔 عشان ما تفوتك الفرص والوظائف اليومية.\n\nفالك التوفيق والوظيفة اللي تطمح لها يا رب! 🟢🫡"
@@ -114,30 +124,29 @@ async def polling_task():
                         db[str(uid)] = [msg1.id, msg2.id, msg3.id]
                         success_count += 1
                         
-                        # فاصل 3 ثوانٍ قبل الانتقال للشخص التالي
-                        await asyncio.sleep(3) 
+                        # --- فاصل زمني كبير بين كل شخص والآخر ---
+                        delay_between_users = random.uniform(15.0, 30.0)
+                        await asyncio.sleep(delay_between_users)
                         
                     except FloodWait as e:
-                        # إذا طلب تيليجرام التوقف مؤقتاً بسبب كثرة الرسائل
-                        await send_report(f"🚨 تيليجرام طلب الانتظار {e.value} ثانية (حماية سبام). سأنتظر وأكمل الإرسال...")
-                        await asyncio.sleep(e.value + 2)
+                        # استراحة إجبارية طويلة إذا طلب تيليجرام
+                        wait_time = e.value + 10
+                        await send_report(f"🚨 تحذير أمني: تيليجرام يطلب التهدئة. سأتوقف عن الإرسال لمدة {wait_time} ثانية لحماية الحساب...")
+                        await asyncio.sleep(wait_time)
                     except UserPrivacyRestricted:
-                        # إذا كان العضو مقفلاً استقبال الرسائل من غير جهات الاتصال
-                        await send_report(f"⚠️ العضو ذو الآيدي `{uid}` مقفل الخاص (إعدادات الخصوصية تمنع الإرسال).")
+                        await send_report(f"⚠️ العضو ذو الآيدي `{uid}` مقفل الخاص.")
                     except PeerIdInvalid:
-                        await send_report(f"⚠️ لم أتمكن من بدء المحادثة مع `{uid}` (حساب محذوف أو لم يتم التعرف عليه).")
+                        await send_report(f"⚠️ لم أتمكن من بدء المحادثة مع `{uid}`.")
                     except Exception as e:
-                        # أي خطأ آخر
                         await send_report(f"❌ فشل الإرسال للعضو `{uid}`\nالسبب: `{e}`")
                     
-                    # في جميع الحالات نحفظه كعضو معروف عشان ما يزعجه البوت ويحاول يرسل له مرة ثانية
                     known_members.add(uid)
                 
                 save_db(db)
                 if success_count > 0:
-                    await send_report(f"✅ اكتمل الإرسال! تم تسليم الجائزة لـ {success_count} أعضاء بنجاح.")
+                    await send_report(f"✅ اكتمل الإرسال! تم تسليم الجائزة لـ {success_count} أعضاء بأمان.")
 
-            # 2. التعامل مع المغادرين
+            # 2. التعامل مع المغادرين (يتم بسرعة لأن الحذف لا يحظر الحساب)
             if left_members:
                 removed_count = 0
                 for uid in left_members:
@@ -156,11 +165,11 @@ async def polling_task():
                 
                 save_db(db)
                 if removed_count > 0:
-                    await send_report(f"🗑️ تم رصد مغادرة أعضاء، وتم سحب جميع الرسائل من {removed_count} أشخاص بنجاح.")
+                    await send_report(f"🗑️ تم رصد مغادرة أعضاء، وتم سحب جميع الرسائل من {removed_count} أشخاص.")
             
-            # 3. إرسال تقرير الفحص الدوري
+            # تقرير دوري هادئ 
             if not new_members and not left_members:
-                await send_report("🔄 تم الفحص (30 ثانية): لا يوجد أعضاء جدد أو مغادرين.")
+                pass # تم إخفاء رسالة (لا يوجد أعضاء جدد) لكي لا تزعجك كل دقيقة
                     
         except Exception as e:
             print(f"Polling loop error: {e}")
