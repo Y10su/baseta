@@ -8,6 +8,8 @@ asyncio.set_event_loop(loop)
 
 from aiohttp import web
 from pyrogram import Client, idle
+# استدعاء مكتبات الأخطاء لمعالجتها
+from pyrogram.errors import FloodWait, UserPrivacyRestricted, PeerIdInvalid
 
 # --- الإعدادات ---
 API_ID = int(os.environ.get("API_ID", 0))
@@ -22,7 +24,6 @@ try:
 except ValueError:
     CHANNEL_ID = channel_env 
 
-# اسم الملف (يرجى إعادة تسمية الملف المرفق بهذا الاسم قبل رفعه لـ GitHub لتجنب أخطاء الترميز)
 FILE_TO_SEND = "baseta_interview.pdf" 
 DB_FILE = "sent_messages.json"
 
@@ -37,7 +38,7 @@ def load_db():
 def save_db(data):
     with open(DB_FILE, "w") as f: json.dump(data, f)
 
-# --- خادم الويب (لإبقاء ريندر متيقظاً) ---
+# --- خادم الويب ---
 async def handle_ping(request):
     return web.Response(text="نظام الفحص المستمر يعمل بنجاح!")
 
@@ -87,6 +88,7 @@ async def polling_task():
             if new_members:
                 await send_report(f"🔍 تم رصد {len(new_members)} أعضاء جدد! جاري الإرسال...")
                 success_count = 0
+                
                 for uid in new_members:
                     try:
                         # الرسالة الأولى: الترحيب
@@ -94,24 +96,41 @@ async def polling_task():
                             chat_id=uid,
                             text="يا هلا بك في عائلة \"بسيطة\" 💚👋\nأول شيء، خذ هديتك اللي وعدناك فيها.. ملف \"أسرار المقابلات الشخصية\" جاهز للتحميل الحين 👇"
                         )
-                        # الرسالة الثانية: الملف (بدون تنبيه)
+                        await asyncio.sleep(1) # فاصل ثانية لمنع الحظر
+                        
+                        # الرسالة الثانية: الملف
                         msg2 = await app_user.send_document(
                             chat_id=uid,
                             document=FILE_TO_SEND
                         )
+                        await asyncio.sleep(1) # فاصل ثانية
+                        
                         # الرسالة الثالثة: من إحنا؟
                         msg3 = await app_user.send_message(
                             chat_id=uid,
                             text="من إحنا؟\nإحنا منصة سعودية متخصصة في تمكين الباحثين عن عمل، ومعانا خبراء موارد بشرية (HR) يصيغون سيرتك بالملّي لتتخطى فلاتر الـ ATS. يعني من اليوم أنت مو لوحدك، إحنا مستشارك وسندك خطوة بخطوة لين تبشرنا بقبولك 🤝🚀.\n\n💡 تنبيه غالي: ثبّت القناة وفعّل التنبيهات 🔔 عشان ما تفوتك الفرص والوظائف اليومية.\n\nفالك التوفيق والوظيفة اللي تطمح لها يا رب! 🟢🫡"
                         )
                         
-                        # حفظ أرقام الرسائل الثلاث ليتم سحبها معاً إذا غادر
                         db[str(uid)] = [msg1.id, msg2.id, msg3.id]
                         success_count += 1
-                        await asyncio.sleep(2) 
+                        
+                        # فاصل 3 ثوانٍ قبل الانتقال للشخص التالي
+                        await asyncio.sleep(3) 
+                        
+                    except FloodWait as e:
+                        # إذا طلب تيليجرام التوقف مؤقتاً بسبب كثرة الرسائل
+                        await send_report(f"🚨 تيليجرام طلب الانتظار {e.value} ثانية (حماية سبام). سأنتظر وأكمل الإرسال...")
+                        await asyncio.sleep(e.value + 2)
+                    except UserPrivacyRestricted:
+                        # إذا كان العضو مقفلاً استقبال الرسائل من غير جهات الاتصال
+                        await send_report(f"⚠️ العضو ذو الآيدي `{uid}` مقفل الخاص (إعدادات الخصوصية تمنع الإرسال).")
+                    except PeerIdInvalid:
+                        await send_report(f"⚠️ لم أتمكن من بدء المحادثة مع `{uid}` (حساب محذوف أو لم يتم التعرف عليه).")
                     except Exception as e:
-                        print(f"فشل الإرسال لـ {uid}: {e}")
+                        # أي خطأ آخر
+                        await send_report(f"❌ فشل الإرسال للعضو `{uid}`\nالسبب: `{e}`")
                     
+                    # في جميع الحالات نحفظه كعضو معروف عشان ما يزعجه البوت ويحاول يرسل له مرة ثانية
                     known_members.add(uid)
                 
                 save_db(db)
@@ -139,7 +158,7 @@ async def polling_task():
                 if removed_count > 0:
                     await send_report(f"🗑️ تم رصد مغادرة أعضاء، وتم سحب جميع الرسائل من {removed_count} أشخاص بنجاح.")
             
-            # 3. إرسال تقرير في حال عدم وجود تغيير
+            # 3. إرسال تقرير الفحص الدوري
             if not new_members and not left_members:
                 await send_report("🔄 تم الفحص (30 ثانية): لا يوجد أعضاء جدد أو مغادرين.")
                     
