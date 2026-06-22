@@ -42,7 +42,7 @@ def save_broadcast_db(data):
 
 # --- خادم الويب ---
 async def handle_ping(request):
-    return web.Response(text="نظام الإرسال البطيء يعمل!")
+    return web.Response(text="نظام الإرسال البطيء والمموه يعمل!")
 
 async def run_web_server():
     app_web = web.Application()
@@ -53,8 +53,17 @@ async def run_web_server():
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
 
-# --- إعداد العملاء ---
-app_user = Client("my_userbot", session_string=SESSION_STRING, api_id=API_ID, api_hash=API_HASH)
+# --- إعداد العملاء (مع إضافة التمويه لليوزر بوت) ---
+app_user = Client(
+    "my_userbot",
+    session_string=SESSION_STRING,
+    api_id=API_ID,
+    api_hash=API_HASH,
+    device_model="iPhone 15 Pro Max", # تمويه الجهاز
+    system_version="iOS 17.5.1",      # تمويه النظام
+    app_version="10.14.1"             # تمويه إصدار التطبيق
+)
+
 app_bot = Client("my_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
 async def send_report(message):
@@ -77,7 +86,7 @@ async def slow_broadcast_task():
                     members_to_message.append((user.id, name))
                     
         total_targets = len(members_to_message)
-        await send_report(f"📊 الإحصائيات:\n- إجمالي المستهدفين المتبقين: {total_targets} عضو.\n\n🚀 ستبدأ حملة الإرسال الآن...")
+        await send_report(f"📊 الإحصائيات:\n- إجمالي المستهدفين المتبقين: {total_targets} عضو.\n\n🚀 ستبدأ حملة الإرسال الآن بوضع التمويه (iPhone 15)...")
     except Exception as e:
         await send_report(f"❌ حدث خطأ أثناء قراءة القناة.\nالخطأ: `{e}`")
         return
@@ -143,14 +152,13 @@ async def slow_broadcast_task():
             sent_users.append(str(uid))
             save_broadcast_db(sent_users)
         except Exception as e:
-            # هنا التعديل الأهم: سيتم إرسال الخطأ بالتفصيل لبوت الأحداث
             error_text = str(e)
             if "PEER_FLOOD" in error_text:
                 await send_report(f"❌ فشل الإرسال للعضو [{name}](tg://user?id={uid})\nالسبب: 🚨 حظر `PEER_FLOOD` (حسابك مقيد من إرسال رسائل جديدة).")
             else:
                 await send_report(f"❌ فشل الإرسال للعضو [{name}](tg://user?id={uid})\nالسبب: `{error_text}`")
             
-            await asyncio.sleep(15) # انتظار أطول قليلاً بعد الخطأ
+            await asyncio.sleep(15) 
 
     if total_targets > 0:
         await send_report(f"🏁 انتهت حملة الإرسال!\nتم توصيل الجائزة لـ {success_count} من أصل {total_targets}.")
