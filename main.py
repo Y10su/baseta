@@ -25,6 +25,7 @@ try:
 except ValueError:
     CHANNEL_ID = channel_env 
 
+# اسم الملف 
 FILE_TO_SEND = "baseta_interview.pdf" 
 BROADCAST_DB = "broadcast_db.json"
 
@@ -41,7 +42,7 @@ def save_broadcast_db(data):
 
 # --- خادم الويب ---
 async def handle_ping(request):
-    return web.Response(text="نظام الإرسال البطيء للأعضاء الحاليين يعمل!")
+    return web.Response(text="نظام الإرسال البطيء يعمل!")
 
 async def run_web_server():
     app_web = web.Application()
@@ -65,10 +66,9 @@ async def slow_broadcast_task():
     await send_report("⏳ جاري جلب قائمة الأعضاء الحاليين من القناة...")
     
     sent_users = load_broadcast_db()
-    members_to_message = [] # سنحفظ هنا (الآيدي، والاسم)
+    members_to_message = [] 
 
     try:
-        # جمع الأعضاء مع تجاهل البوتات والحسابات المحذوفة ومن استلم مسبقاً
         async for member in app_user.get_chat_members(CHANNEL_ID):
             user = member.user
             if not user.is_bot and not user.is_deleted:
@@ -77,22 +77,21 @@ async def slow_broadcast_task():
                     members_to_message.append((user.id, name))
                     
         total_targets = len(members_to_message)
-        await send_report(f"📊 الإحصائيات:\n- إجمالي المستهدفين المتبقين: {total_targets} عضو.\n\n🚀 ستبدأ حملة الإرسال الآن ببطء شديد...")
+        await send_report(f"📊 الإحصائيات:\n- إجمالي المستهدفين المتبقين: {total_targets} عضو.\n\n🚀 ستبدأ حملة الإرسال الآن...")
     except Exception as e:
         await send_report(f"❌ حدث خطأ أثناء قراءة القناة.\nالخطأ: `{e}`")
         return
 
-    # بدء الإرسال للأعضاء
     success_count = 0
     for uid, name in members_to_message:
         try:
-            # --- الرسالة الأولى (ترحيب) ---
+            # --- الرسالة الأولى (ترحيب مع ذكر الاسم لكسر تطابق الرسائل) ---
             await app_user.send_chat_action(chat_id=uid, action=ChatAction.TYPING)
             await asyncio.sleep(random.uniform(3.0, 5.0)) 
             
             await app_user.send_message(
                 chat_id=uid,
-                text="يا هلا بك في عائلة \"بسيطة\" 💚👋\nأول شيء، خذ هديتك اللي وعدناك فيها.. ملف \"أسرار المقابلات الشخصية\" جاهز للتحميل الحين 👇"
+                text=f"يا هلا بك يا {name} في عائلة \"بسيطة\" 💚👋\nأول شيء، خذ هديتك اللي وعدناك فيها.. ملف \"أسرار المقابلات الشخصية\" جاهز للتحميل الحين 👇"
             )
             await asyncio.sleep(random.uniform(2.0, 4.0)) 
             
@@ -115,28 +114,24 @@ async def slow_broadcast_task():
                 text="من إحنا؟\nإحنا منصة سعودية متخصصة في تمكين الباحثين عن عمل، ومعانا خبراء موارد بشرية (HR) يصيغون سيرتك بالملّي لتتخطى فلاتر الـ ATS. يعني من اليوم أنت مو لوحدك، إحنا مستشارك وسندك خطوة بخطوة لين تبشرنا بقبولك 🤝🚀.\n\n💡 تنبيه غالي: ثبّت القناة وفعّل التنبيهات 🔔 عشان ما تفوتك الفرص والوظائف اليومية.\n\nفالك التوفيق والوظيفة اللي تطمح لها يا رب! 🟢🫡"
             )
             
-            # تسجيل الآيدي في قاعدة البيانات أنه استلم
             sent_users.append(str(uid))
             save_broadcast_db(sent_users)
             success_count += 1
             
-            # تحديد وقت الراحة العشوائي
-            delay = random.uniform(40.0, 70.0)
+            delay = random.uniform(45.0, 75.0)
             
-            # إرسال التقرير الحي لبوت الأحداث
             report_msg = (
                 f"✅ **تم الإرسال بنجاح!**\n"
                 f"👤 العضو: [{name}](tg://user?id={uid})\n"
                 f"📈 العدد المنجز: {success_count} من أصل {total_targets}\n"
-                f"⏳ سآخذ فترة راحة لمدة **{int(delay)} ثانية** قبل الشخص التالي..."
+                f"⏳ سآخذ فترة راحة لمدة **{int(delay)} ثانية**..."
             )
             await send_report(report_msg)
             
-            # أخذ فترة الراحة
             await asyncio.sleep(delay)
             
         except FloodWait as e:
-            wait_time = e.value + 30
+            wait_time = e.value + 10
             await send_report(f"🚨 تحذير: تيليجرام يطلب التهدئة. سأتوقف عن الإرسال لمدة {wait_time} ثانية...")
             await asyncio.sleep(wait_time)
         except UserPrivacyRestricted:
@@ -144,20 +139,24 @@ async def slow_broadcast_task():
             sent_users.append(str(uid))
             save_broadcast_db(sent_users)
         except PeerIdInvalid:
-            await send_report(f"⚠️ تجاوزت العضو [{name}](tg://user?id={uid}) (حساب غير صالح أو محذوف).")
+            await send_report(f"⚠️ تجاوزت العضو [{name}](tg://user?id={uid}) (حساب محذوف).")
             sent_users.append(str(uid))
             save_broadcast_db(sent_users)
         except Exception as e:
-            print(f"Error with {uid}: {e}")
-            await asyncio.sleep(10)
+            # هنا التعديل الأهم: سيتم إرسال الخطأ بالتفصيل لبوت الأحداث
+            error_text = str(e)
+            if "PEER_FLOOD" in error_text:
+                await send_report(f"❌ فشل الإرسال للعضو [{name}](tg://user?id={uid})\nالسبب: 🚨 حظر `PEER_FLOOD` (حسابك مقيد من إرسال رسائل جديدة).")
+            else:
+                await send_report(f"❌ فشل الإرسال للعضو [{name}](tg://user?id={uid})\nالسبب: `{error_text}`")
+            
+            await asyncio.sleep(15) # انتظار أطول قليلاً بعد الخطأ
 
-    # نهاية الحملة
     if total_targets > 0:
-        await send_report(f"🏁 انتهت حملة الإرسال!\nتم توصيل الجائزة لـ {success_count} من أصل {total_targets} بنجاح.")
+        await send_report(f"🏁 انتهت حملة الإرسال!\nتم توصيل الجائزة لـ {success_count} من أصل {total_targets}.")
     else:
-        await send_report("✅ لا يوجد أشخاص للإرسال لهم. الجميع استلم رسالته مسبقاً.")
+        await send_report("✅ لا يوجد أشخاص للإرسال لهم.")
 
-# --- دالة التشغيل الأساسية ---
 async def start_all():
     await run_web_server()
     await app_user.start()
