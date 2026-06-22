@@ -2,3 +2,7 @@ pyrogram
 tgcrypto
 requests
 aiohttp
+pyTelegramBotAPI
+aiohttp
+
+
