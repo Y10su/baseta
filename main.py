@@ -35,7 +35,7 @@ def save_user(user_id):
 
 # --- خادم الويب ---
 async def handle_ping(request):
-    return web.Response(text="النظام يعمل بنجاح!")
+    return web.Response(text="النظام الشامل يعمل بنجاح!")
 
 async def run_web_server():
     app = web.Application()
@@ -55,7 +55,7 @@ async def keep_alive_ping():
             try:
                 await bot.send_message(
                     MY_CHAT_ID, 
-                    f"🔄 **نبض النظام:** البوت يعمل بكفاءة.\n👥 عدد الأعضاء اللي فعلوا البوت حتى الآن: **{users_count}**",
+                    f"🔄 **نبض النظام:** البوت يعمل بكفاءة.\n👥 عدد الأعضاء اللي فعلوا البوت أو تم قبولهم: **{users_count}**",
                     parse_mode="Markdown"
                 )
             except Exception as e:
@@ -71,7 +71,46 @@ async def check_membership(user_id):
     except:
         return False
 
-# --- معالجة أمر /start ---
+# 🌟 الميزة 1: معالجة طلبات الانضمام (Join Requests) 🌟
+@bot.chat_join_request_handler()
+async def handle_join_request(request):
+    user_id = request.from_user.id
+    name = request.from_user.first_name or "عضو"
+    chat_id = request.chat.id
+
+    # حفظ العضو في العداد
+    save_user(user_id)
+
+    try:
+        # 1. قبول الطلب وإدخاله للقناة
+        await bot.approve_chat_join_request(chat_id, user_id)
+        
+        # 2. الإرسال الفوري للرسائل
+        await bot.send_message(
+            user_id, 
+            f"يا هلا بك يا {name} في عائلة \"بسيطة\" 💚👋\nأول شيء، خذ هديتك اللي وعدناك فيها.. ملف \"أسرار المقابلات الشخصية\" جاهز للتحميل الحين 👇"
+        )
+        
+        try:
+            with open(FILE_TO_SEND, 'rb') as pdf_file:
+                await bot.send_document(user_id, pdf_file)
+        except Exception as e:
+            await bot.send_message(user_id, "عذراً، هناك مشكلة في قراءة الملف، تواصل مع الإدارة.")
+            
+        await bot.send_message(
+            user_id, 
+            "من إحنا؟\nإحنا منصة سعودية متخصصة في تمكين الباحثين عن عمل، ومعانا خبراء موارد بشرية (HR) يصيغون سيرتك بالملّي لتتخطى فلاتر الـ ATS. يعني من اليوم أنت مو لوحدك، إحنا مستشارك وسندك خطوة بخطوة لين تبشرنا بقبولك 🤝🚀.\n\n💡 تنبيه غالي: ثبّت القناة وفعّل التنبيهات 🔔 عشان ما تفوتك الفرص والوظائف اليومية.\n\nفالك التوفيق والوظيفة اللي تطمح لها يا رب! 🟢🫡"
+        )
+        
+        # إشعار للإدارة في الخاص (اختياري، يطمنك إنه يشتغل)
+        if MY_CHAT_ID != 0:
+            await bot.send_message(MY_CHAT_ID, f"✅ **تم قبول عضو جديد آلياً:** {name}")
+
+    except Exception as e:
+        if MY_CHAT_ID != 0:
+            await bot.send_message(MY_CHAT_ID, f"❌ حدث خطأ في قبول {name}: {e}")
+
+# 🌟 الميزة 2: معالجة أمر /start (للي يدخل البوت بنفسه) 🌟
 @bot.message_handler(commands=['start'])
 async def send_welcome(message):
     user_id = message.from_user.id
@@ -85,7 +124,6 @@ async def send_welcome(message):
     await bot.delete_message(user_id, checking_msg.message_id)
     
     if is_member:
-        # الإرسال الفوري (بدون تأخير بشري)
         await bot.send_message(
             user_id, 
             f"يا هلا بك يا {name} في عائلة \"بسيطة\" 💚👋\nأول شيء، خذ هديتك اللي وعدناك فيها.. ملف \"أسرار المقابلات الشخصية\" جاهز للتحميل الحين 👇"
