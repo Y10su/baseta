@@ -15,9 +15,12 @@ except ValueError:
 
 CHANNEL_USERNAME = os.environ.get("CHANNEL_ID", "@bassetaSa") 
 FILE_TO_SEND = "baseta_interview.pdf"
-USERS_DB = "users_db.json" # ملف لحفظ عدد من فعلوا البوت
+USERS_DB = "users_db.json" 
 
 bot = AsyncTeleBot(BOT_TOKEN)
+
+# متغير لتتبع حالة الأدمن (عشان نعرف متى يرسل رسالة الإذاعة)
+admin_state = {}
 
 # --- دوال قاعدة بيانات الأعضاء ---
 def load_users():
@@ -46,20 +49,19 @@ async def run_web_server():
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
 
-# --- دالة النبض (كل 5 دقائق مع العداد) ---
+# --- دالة النبض (كل 5 دقائق) ---
 async def keep_alive_ping():
     while True:
-        await asyncio.sleep(300) # 300 ثانية
+        await asyncio.sleep(300) 
         if MY_CHAT_ID != 0:
             users_count = len(load_users())
             try:
                 await bot.send_message(
                     MY_CHAT_ID, 
-                    f"🔄 **نبض النظام:** البوت يعمل بكفاءة.\n👥 عدد الأعضاء اللي فعلوا البوت أو تم قبولهم: **{users_count}**",
+                    f"🔄 **نبض النظام:** البوت يعمل بكفاءة.\n👥 عدد الأعضاء المسجلين: **{users_count}**",
                     parse_mode="Markdown"
                 )
-            except Exception as e:
-                print(f"Ping Error: {e}")
+            except: pass
 
 # --- دالة التحقق من الاشتراك ---
 async def check_membership(user_id):
@@ -71,21 +73,18 @@ async def check_membership(user_id):
     except:
         return False
 
-# 🌟 الميزة 1: معالجة طلبات الانضمام (Join Requests) 🌟
+# 🌟 1. معالجة طلبات الانضمام 🌟
 @bot.chat_join_request_handler()
 async def handle_join_request(request):
     user_id = request.from_user.id
     name = request.from_user.first_name or "عضو"
     chat_id = request.chat.id
 
-    # حفظ العضو في العداد
     save_user(user_id)
 
     try:
-        # 1. قبول الطلب وإدخاله للقناة
         await bot.approve_chat_join_request(chat_id, user_id)
         
-        # 2. الإرسال الفوري للرسائل
         await bot.send_message(
             user_id, 
             f"يا هلا بك يا {name} في عائلة \"بسيطة\" 💚👋\nأول شيء، خذ هديتك اللي وعدناك فيها.. ملف \"أسرار المقابلات الشخصية\" جاهز للتحميل الحين 👇"
@@ -94,7 +93,7 @@ async def handle_join_request(request):
         try:
             with open(FILE_TO_SEND, 'rb') as pdf_file:
                 await bot.send_document(user_id, pdf_file)
-        except Exception as e:
+        except:
             await bot.send_message(user_id, "عذراً، هناك مشكلة في قراءة الملف، تواصل مع الإدارة.")
             
         await bot.send_message(
@@ -102,7 +101,6 @@ async def handle_join_request(request):
             "من إحنا؟\nإحنا منصة سعودية متخصصة في تمكين الباحثين عن عمل، ومعانا خبراء موارد بشرية (HR) يصيغون سيرتك بالملّي لتتخطى فلاتر الـ ATS. يعني من اليوم أنت مو لوحدك، إحنا مستشارك وسندك خطوة بخطوة لين تبشرنا بقبولك 🤝🚀.\n\n💡 تنبيه غالي: ثبّت القناة وفعّل التنبيهات 🔔 عشان ما تفوتك الفرص والوظائف اليومية.\n\nفالك التوفيق والوظيفة اللي تطمح لها يا رب! 🟢🫡"
         )
         
-        # إشعار للإدارة في الخاص (اختياري، يطمنك إنه يشتغل)
         if MY_CHAT_ID != 0:
             await bot.send_message(MY_CHAT_ID, f"✅ **تم قبول عضو جديد آلياً:** {name}")
 
@@ -110,13 +108,93 @@ async def handle_join_request(request):
         if MY_CHAT_ID != 0:
             await bot.send_message(MY_CHAT_ID, f"❌ حدث خطأ في قبول {name}: {e}")
 
-# 🌟 الميزة 2: معالجة أمر /start (للي يدخل البوت بنفسه) 🌟
+# 🌟 2. لوحة تحكم الإدارة (أمر /admin) 🌟
+@bot.message_handler(commands=['admin'], func=lambda message: message.chat.id == MY_CHAT_ID)
+async def admin_panel(message):
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("📊 إحصائيات البوت", callback_data="stats"))
+    markup.add(InlineKeyboardButton("📢 إذاعة رسالة (نشر)", callback_data="broadcast"))
+    
+    await bot.send_message(
+        message.chat.id, 
+        "⚙️ **لوحة تحكم الإدارة - منصة بسيطة**\n\nاختر الإجراء المطلوب من الأزرار بالأسفل:", 
+        reply_markup=markup, 
+        parse_mode="Markdown"
+    )
+
+# استجابة أزرار لوحة التحكم
+@bot.callback_query_handler(func=lambda call: call.message.chat.id == MY_CHAT_ID)
+async def admin_callbacks(call):
+    if call.data == "stats":
+        users = load_users()
+        await bot.answer_callback_query(call.id)
+        await bot.send_message(
+            call.message.chat.id, 
+            f"📊 **إحصائيات منصة بسيطة:**\n\n👥 إجمالي عدد المستخدمين في قاعدة البيانات: **{len(users)}** عضو.", 
+            parse_mode="Markdown"
+        )
+    elif call.data == "broadcast":
+        admin_state[call.from_user.id] = "waiting_for_broadcast"
+        await bot.answer_callback_query(call.id)
+        
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("❌ إلغاء الإذاعة", callback_data="cancel_broadcast"))
+        
+        await bot.send_message(
+            call.message.chat.id, 
+            "📢 **وضع الإذاعة نشط:**\n\nأرسل الآن الرسالة (نص، صورة، أو ملف) التي ترغب في نشرها للجميع.\n\n⚠️ *تنبيه: سيتم الإرسال فوراً لجميع المستخدمين.*", 
+            reply_markup=markup, 
+            parse_mode="Markdown"
+        )
+    elif call.data == "cancel_broadcast":
+        admin_state.pop(call.from_user.id, None)
+        await bot.answer_callback_query(call.id, "تم الإلغاء")
+        await bot.edit_message_text(
+            "❌ **تم إلغاء الإذاعة.**", 
+            chat_id=call.message.chat.id, 
+            message_id=call.message.message_id, 
+            parse_mode="Markdown"
+        )
+
+# تنفيذ النشر (يستقبل الرسالة وينسخها للجميع)
+@bot.message_handler(content_types=['text', 'photo', 'video', 'document', 'audio', 'voice'], func=lambda message: message.chat.id == MY_CHAT_ID and admin_state.get(message.from_user.id) == "waiting_for_broadcast")
+async def execute_broadcast(message):
+    admin_state.pop(message.from_user.id, None) # إنهاء وضع الإذاعة
+    users = load_users()
+    
+    if not users:
+        await bot.send_message(MY_CHAT_ID, "❌ لا يوجد مستخدمين في قاعدة البيانات.")
+        return
+    
+    await bot.send_message(MY_CHAT_ID, f"🚀 جاري بدء النشر لـ {len(users)} مستخدم... الرجاء الانتظار.")
+    
+    success = 0
+    failed = 0
+    for uid in users:
+        try:
+            # نسخ الرسالة بالضبط كما أرسلتها (سواء صورة، ملف، نص)
+            await bot.copy_message(chat_id=uid, from_chat_id=message.chat.id, message_id=message.message_id)
+            success += 1
+            await asyncio.sleep(0.05) # تأخير بسيط جداً لحماية السيرفر من الضغط
+        except:
+            failed += 1
+            
+    await bot.send_message(
+        MY_CHAT_ID, 
+        f"✅ **انتهت الإذاعة بنجاح!**\n\n🟢 المستلمين: {success}\n🔴 فشل لـ: {failed} (حظروا البوت أو حساب محذوف)", 
+        parse_mode="Markdown"
+    )
+
+# 🌟 3. معالجة أمر /start 🌟
 @bot.message_handler(commands=['start'])
 async def send_welcome(message):
+    # لا نستجيب لك في أمر ستارت إذا كنت أنت في وضع الإدارة عشان ما يصير تعارض
+    if message.chat.id == MY_CHAT_ID and admin_state.get(message.from_user.id) == "waiting_for_broadcast":
+        return
+
     user_id = message.from_user.id
     name = message.from_user.first_name or "عضو"
     
-    # حفظ العضو في العداد
     save_user(user_id)
     
     checking_msg = await bot.send_message(user_id, "⏳ جاري التحقق من اشتراكك...")
@@ -132,14 +210,13 @@ async def send_welcome(message):
         try:
             with open(FILE_TO_SEND, 'rb') as pdf_file:
                 await bot.send_document(user_id, pdf_file)
-        except Exception as e:
+        except:
             await bot.send_message(user_id, "عذراً، هناك مشكلة في قراءة الملف، تواصل مع الإدارة.")
             
         await bot.send_message(
             user_id, 
             "من إحنا؟\nإحنا منصة سعودية متخصصة في تمكين الباحثين عن عمل، ومعانا خبراء موارد بشرية (HR) يصيغون سيرتك بالملّي لتتخطى فلاتر الـ ATS. يعني من اليوم أنت مو لوحدك، إحنا مستشارك وسندك خطوة بخطوة لين تبشرنا بقبولك 🤝🚀.\n\n💡 تنبيه غالي: ثبّت القناة وفعّل التنبيهات 🔔 عشان ما تفوتك الفرص والوظائف اليومية.\n\nفالك التوفيق والوظيفة اللي تطمح لها يا رب! 🟢🫡"
         )
-        
     else:
         markup = InlineKeyboardMarkup()
         clean_username = CHANNEL_USERNAME.replace('@', '')
@@ -152,7 +229,7 @@ async def send_welcome(message):
             reply_markup=markup
         )
 
-# --- نظام التواصل: استقبال رسائل الأعضاء وتوجيهها لك ---
+# 🌟 4. نظام التواصل: توجيه رسائل الأعضاء لك 🌟
 @bot.message_handler(func=lambda message: message.chat.id != MY_CHAT_ID and not message.text.startswith('/'))
 async def forward_to_admin(message):
     user_id = message.from_user.id
@@ -168,7 +245,6 @@ async def forward_to_admin(message):
         )
         await bot.send_message(MY_CHAT_ID, admin_msg)
 
-# استقبال المرفقات من الأعضاء (صور، ملفات، إلخ)
 @bot.message_handler(content_types=['photo', 'video', 'document', 'audio', 'voice'], func=lambda message: message.chat.id != MY_CHAT_ID)
 async def forward_media_to_admin(message):
     user_id = message.from_user.id
@@ -177,25 +253,25 @@ async def forward_media_to_admin(message):
         await bot.send_message(MY_CHAT_ID, f"📎 **مرفق من:** {name}\n🆔 ID: {user_id}")
         await bot.forward_message(MY_CHAT_ID, message.chat.id, message.message_id)
 
-# --- نظام التواصل: ردك كإدارة على الأعضاء ---
+# 🌟 5. نظام التواصل: ردك كإدارة 🌟
 @bot.message_handler(func=lambda message: message.chat.id == MY_CHAT_ID and message.reply_to_message is not None)
 async def reply_to_user(message):
     try:
         target_user_id = None
         original_msg = message.reply_to_message
         
-        # استخراج الآيدي من الرسالة النصية
         if original_msg.text:
             match = re.search(r"ID:\s*(\d+)", original_msg.text)
             if match:
                 target_user_id = int(match.group(1))
         
-        # إذا قمت بالرد على رسالة محولة (مرفقات)
         if not target_user_id and original_msg.forward_from:
             target_user_id = original_msg.forward_from.id
             
         if target_user_id:
-            await bot.send_message(target_user_id, f"📩 **رد من منصة بسيطة:**\n\n{message.text}")
+            # ننسخ ردك للعضو عشان لو رديت بصورة توصل له صورة، ولو نص يوصل نص
+            await bot.send_message(target_user_id, "📩 **رد من منصة بسيطة:**")
+            await bot.copy_message(chat_id=target_user_id, from_chat_id=message.chat.id, message_id=message.message_id)
             await bot.send_message(MY_CHAT_ID, "✅ تم إرسال ردك للعضو بنجاح.")
         else:
             await bot.send_message(MY_CHAT_ID, "⚠️ لم أتمكن من تحديد العضو! تأكد أنك تسوي (رد / Reply) على الرسالة اللي فيها رقم الـ ID.")
